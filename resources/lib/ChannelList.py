@@ -22,6 +22,7 @@ import time, datetime, threading, _strptime, calendar, socket
 import httplib, urllib, urllib2, zlib, feedparser, HTMLParser
 import base64, shutil, random, errno
 
+
 from operator import itemgetter
 from parsers import HDTrailers
 from parsers import xmltv
@@ -45,6 +46,11 @@ from BeautifulSoup import BeautifulSoup
 from parsers import ustvnow
 from pyfscache import *
 
+# Ben's import
+from random import randint
+from collections import deque
+import collections
+
 socket.setdefaulttimeout(30)
 sys.setrecursionlimit(10000)
 
@@ -66,7 +72,16 @@ try:
     ENHANCED_DATA = True                
 except Exception,e:  
     ENHANCED_DATA = False
-    xbmc.log("script.pseudotv.live-ChannelList: metahandler Import failed! " + str(e))    
+    xbmc.log("script.pseudotv.live-ChannelList: metahandler Import failed! " + str(e))
+
+
+def rotateList(array):
+    array = deque(array)
+    array.rotate(randint(1,len(array)))
+    array = list(collections.deque(array))
+    
+    return array
+
 
 class ChannelList:
     def __init__(self):
@@ -818,8 +833,10 @@ class ChannelList:
         self.channels[channel - 1].isRandom = israndom
         self.channels[channel - 1].isReverse = isreverse
         
+        
         if len(fileList) > self.Playlist_Limit:
             fileList = fileList[:self.Playlist_Limit]
+        
         fileList = self.runActions(RULES_ACTION_LIST, channel, fileList)
         
         # inject BCT into filelist
@@ -1715,6 +1732,8 @@ class ChannelList:
         self.setBackgroundStatus("Initializing: Loading Channel " + str(self.settingChannel),string2=" querying Kodi database")
         fileList = self.getFileList(self.requestList(dir_name, fletype), channel, limit)
         self.log("buildFileList return")
+        self.log("\n !!!!!!!!!!!!!!!!!!!!! \n Playlist is:\n")
+        self.log('\n'.join(fileList))
         return fileList
   
   
@@ -3318,7 +3337,7 @@ class ChannelList:
                     for n in range(int(REAL_SETTINGS.getSetting("numtrailers")) + 1):
                         self.setBackgroundStatus("Initializing: Loading Channel " + str(self.settingChannel),string2="adding Trailers")
                         newFileList.append(random.choice(TrailerLST))#random fill
-                random.shuffle(newFileList)
+    #random.shuffle(newFileList)
                 
             # cleanup   
             del fileList[:]
@@ -4595,6 +4614,7 @@ class ChannelList:
         
     def getFileList_NEW(self, file_detail, channel, limit, excludeLST=[]):
         self.log("getFileList_NEW, channel = " + str(channel) + " ,limit = " + str(limit) + " ,excludeLST = " + str(excludeLST))
+        xbmc.log("Running getFileList_NEW")
         fileList = []
         seasoneplist = []
         dirlimit = limit
@@ -4616,6 +4636,7 @@ class ChannelList:
             try:
                 tmpstr = ''
                 durParsed = False
+                xbmc.log("(Ben's Line (4624)) PseudoTV: Searching %s ..." % f)
                 files = re.search('"file" *: *"(.*?)",', f)               
                 if files:
                     if not files.group(1).startswith(("plugin", "upnp")) and (files.group(1).endswith("/") or files.group(1).endswith("\\")):
@@ -4770,10 +4791,12 @@ class ChannelList:
                                         
                                         # TVshow
                                         if type == 'tvshow':
+                                            xbmc.log("!! \n %s is a 'tvshow' \n !!!!!!" % f)
                                             season = re.search('"season" *: *([0-9]*?),', f)
                                             episode = re.search('"episode" *: *([0-9]*?),', f)
                                             swtitle = (titles.group(1)).replace('\\','')
                                             swtitle = (swtitle.split('.', 1)[-1]).replace('. ','')
+                                            self.log('swtitle= ' + swtitle)
                                             dbid = str(dbid) +':'+ str(epid)
                                             
                                             try:
@@ -4805,6 +4828,7 @@ class ChannelList:
 
                                             if len(showtitles.group(1)) > 0:
                                                 showtitle = showtitles.group(1)
+                                                self.log('(4816) showtitle =' + showtitle)
                                             else:
                                                 showtitle = labels.group(1)
                                         else: # Movie            
@@ -4872,7 +4896,9 @@ class ChannelList:
                                         tmpstr = self.makeTMPSTR(dur, showtitle, year, subtitle, description, GenreLiveID, file, timestamp, includeMeta)      
                                         
                                         if self.channels[channel - 1].mode & MODE_ORDERAIRDATE > 0:
-                                            seasoneplist.append([seasonval, epval, tmpstr])
+                                            self.log("seasoneplist = \n")
+                                            self.log('\n'.join(str(item) for innerlist in seasoneplist for item in innerlist))
+                                            seasoneplist.append([showtitle, seasonval, epval, tmpstr])
                                         else:
                                             # Filter 3D Media.
                                             if self.isMedia3D(file) == True:
@@ -4892,12 +4918,84 @@ class ChannelList:
             except Exception,e:
                 self.log('getFileList_NEW, failed...' + str(e))
                 self.log(traceback.format_exc(), xbmc.LOGERROR)
-        if self.channels[channel - 1].mode & MODE_ORDERAIRDATE > 0:
+        if self.channels[channel - 1].mode & MODE_ORDERAIRDATE > 0: # Sorting shows in playlist
             self.log('getFileList_NEW, MODE_ORDERAIRDATE')
-            seasoneplist.sort(key=lambda seep: seep[1])
-            seasoneplist.sort(key=lambda seep: seep[0])
+            
+            
+            sortedShowsArray = []
+            sortedShow = []
+
+            indexArr = []  # index array in order to spread the shows more equelly when shuffeling
+
+            show_title = 0
+
+            indexRef = 0 # var to hold show's index no.
+            
+            
+            seasoneplist.sort(key=lambda seep: (seep[0], seep[1], seep[2]))
+            #seasoneplist.sort(key=lambda seep: seep[1])
+            
+            
+                              
+            for i in seasoneplist:
+            ##    print('for ' + i[0])
+
+                if i[0] != show_title:
+                    #print('in if ' + i[0])
+                    
+                    if sortedShow != []:
+                        sortedShowsArray[indexRef-1] = rotateList(sortedShowsArray[indexRef-1])
+                
+                
+                    
+                    sortedShow = []
+                    sortedShowsArray.append(sortedShow)
+                    indexRef = indexRef+1
+                
+                sortedShow.append(i)
+
+                indexArr.append(indexRef-1) #appends index array (-1 in order to start the index at 0)
+
+                show_title = i[0]
+            
+    
+
+            
+            
             for seepitem in seasoneplist:
-                fileList.append(seepitem[2])
+                self.log('\n'.join(fileList))
+
+                indexRef = randint(0, len(indexArr)-1)
+                
+
+                showRef = indexArr[indexRef]
+                ##    print ('showRef ' + str(showRef))
+
+
+
+                fileList.append(sortedShowsArray[showRef][0][3])
+
+                #print('deleting episode: ' + str(showRef))
+
+
+
+                del sortedShowsArray[showRef][0]
+                del indexArr[indexRef]
+                #print(indexArr)
+
+                if sortedShowsArray[showRef] == []:
+                    print(str(showRef) + ' : : NO MORE EPISODES')
+                    del sortedShowsArray[showRef]
+                    
+                    if indexArr != []:
+                        if showRef < indexArr[len(indexArr)-1]:#On;y if shpw that was deleted was not the ;ast one in the index than change corresponding index numbers
+                            for x in range (indexRef, len(indexArr)): #Changing all index numbers to the new corresponding ones
+                                indexArr[x] = indexArr[x] - 1
+                        else:
+                            print("indexArr is empty")
+                              
+                              
+                #fileList.append(seepitem[3])
 
         # Stop playback when called during plugin parsing.
         if self.background == False and xbmc.Player().isPlaying():
