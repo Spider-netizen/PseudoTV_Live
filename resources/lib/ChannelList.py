@@ -3433,7 +3433,7 @@ class ChannelList:
         #Local
         if CommercialsType == '1':
             self.log("getCommercialList, Local - " + chname)
-            PATH = xbmc.translatePath(os.path.join(REAL_SETTINGS.getSetting('commercialsfolder'),chname,''))
+            PATH = xbmc.translatePath(os.path.join(PATH,''))
             self.log("getCommercialList, Local - PATH = " + PATH)
             CommercialLST.extend(self.createDirectoryPlaylist(PATH, 100, 1, 100)) 
                     
