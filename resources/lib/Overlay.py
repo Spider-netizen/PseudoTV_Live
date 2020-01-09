@@ -21,6 +21,8 @@ import datetime, time, threading, _strptime
 import xbmc, xbmcgui, xbmcaddon, xbmcvfs
 import IDLE
 
+import inspect #Ben
+
 from Playlist import Playlist
 from Globals import *
 from Channel import Channel
@@ -61,6 +63,8 @@ class MyPlayer(xbmc.Player):
         self.stopped = False
         self.manuallyStopped = False
         self.ignoreNextStop = False
+
+        
         
         
     def log(self, msg, level = xbmc.LOGDEBUG):
@@ -177,6 +181,7 @@ class MyPlayer(xbmc.Player):
         
         self.overlay.setMediaProp()
         if self.overlay.infoOnChange == True:
+            
             self.overlay.showInfo()
         self.overlay.showChannelLabel(self.overlay.currentChannel)
 
@@ -203,7 +208,10 @@ class MyPlayer(xbmc.Player):
         # fix for fullscreen video bug when playback is started while epg is opened.
         if self.overlay.isWindowOpen() != False:
             self.overlay.windowSwap(self.overlay.isWindowOpen(),True)
-        self.onPlaybackAction()
+
+        #Ben'sss
+        if self.overlay.infoOnStart == True:
+            self.onPlaybackAction()
  
  
     def isOndemand(self, title, file):
@@ -362,6 +370,8 @@ class TVOverlay(xbmcgui.WindowXMLDialog):
         self.enableMute = REAL_SETTINGS.getSetting('enable_mute') == "true"
         self.enableSubs = int(REAL_SETTINGS.getSetting('enable_subtitle'))
         self.log('playActionTime = ' + str(self.playActionTime))
+
+        self.seektime_offset = 2 #Ben's
   
         for i in range(3):
             self.channelLabel.append(xbmcgui.ControlImage(50 + (50 * i), 50, 50, 50, IMAGES_LOC + 'solid.png', colorDiffuse = self.channelbugcolor))
@@ -379,6 +389,8 @@ class TVOverlay(xbmcgui.WindowXMLDialog):
         self.Artdownloader = Artdownloader()
         self.doModal()
         self.log('__init__ return')
+
+        
 
         
     def resetChannelTimes(self):
@@ -1189,24 +1201,45 @@ class TVOverlay(xbmcgui.WindowXMLDialog):
                 seektime2 = self.channels[self.currentChannel - 1].showTimeOffset + timedif
                 startovertime = float((int(self.channels[self.currentChannel - 1].getItemDuration(self.channels[self.currentChannel - 1].playlistPosition))/10)*int(REAL_SETTINGS.getSetting("StartOverTime")))
                 
+                self.log('[Ben:] setChannel, current seektime: {}'.format(self.Player.getTime()))
+                overtime = float((int(self.channels[self.currentChannel - 1].getItemDuration(self.channels[self.currentChannel - 1].playlistPosition))/10)*int(REAL_SETTINGS.getSetting("StreamOverTime"))) #Ben's
+                self.log('[Ben:] setChannel, overtime = {}'.format(overtime))
+                self.log('[Ben:] setChannel, required self.seektime = {}'.format(self.seektime))
+                self.log('[Ben:] setChannel, required seektime1 = {}'.format(seektime1))
+                self.log('[Ben:] setChannel, required seektime2 = {}'.format(seektime2))
+                
+                #media_time_pos = None
+                #if self.Player.getTime() > overtime:
+                media_time_pos = self.Player.getTime()
+                
+
                 # Smartseek strms and plugins to avoid seeking media towards the end of runtime.
-                if mediapath[-4:].lower() == 'strm' or chtype == 15:
-                    overtime = float((int(self.channels[self.currentChannel - 1].getItemDuration(self.channels[self.currentChannel - 1].playlistPosition))/10)*int(REAL_SETTINGS.getSetting("StreamOverTime")))
-                    self.seektime = self.SmartSeek(mediapath, seektime1, seektime2, overtime)
-                else:
-                    try:
-                        self.Player.seekTime(seektime1)
-                        self.seektime = seektime1
-                        self.log("setChannel, using seektime1")
-                    except:
-                        self.log("setChannel, Unable to set proper seek time, trying different value")
+                while ((self.Player.getTime() + self.seektime_offset < seektime1) or (self.Player.getTime() + self.seektime_offset < seektime2) or (self.Player.getTime() == media_time_pos)) and chtype != 8: # "self.Player.getTime() > overtime" is here to catch times where the player return seektime that is bigger than overtime
+                    self.log('[Ben:] setChannel, trying to get right seektime...')
+                    self.log('[Ben:] setChannel, media_time_pos = {}'.format(media_time_pos))
+                    self.log('[Ben:] setChannel, current seektime: {}'.format(self.Player.getTime()))
+                    self.log('[Ben:] setChannel, required self.seektime = {}'.format(self.seektime))
+                    self.log('[Ben:] setChannel, required seektime1 = {}'.format(seektime1))
+                    self.log('[Ben:] setChannel, required seektime2 = {}'.format(seektime2))
+                    if mediapath[-4:].lower() == 'strm' or chtype == 15:
+                        self.seektime, seektime1, seektime2 = self.SmartSeek(mediapath, seektime1, seektime2, overtime)
+                    else:
                         try:
-                            self.Player.seekTime(seektime2)
-                            self.seektime = seektime2
-                            self.log("setChannel, using seektime2")
+                            self.Player.seekTime(seektime1)
+                            self.seektime = seektime1
+                            self.log("setChannel, using seektime1")
                         except:
-                            self.log('setChannel, Exception during seek', xbmc.LOGERROR)
-                self.log("setChannel,self.seektime = " + str(self.seektime))        
+                            self.log("setChannel, Unable to set proper seek time, trying different value")
+                            try:
+                                self.Player.seekTime(seektime2)
+                                self.seektime = seektime2
+                                self.log("setChannel, using seektime2")
+                            except:
+                                self.log('setChannel, Exception during seek', xbmc.LOGERROR)
+                    self.log("setChannel,self.seektime = " + str(self.seektime)) 
+                    xbmc.sleep(100)  
+                    
+                         
                 
                 # toggle startover prompt
                 self.toggleShowStartover(False)
@@ -1216,6 +1249,7 @@ class TVOverlay(xbmcgui.WindowXMLDialog):
                 self.log("setChannel, Ignoring Seektime")  
                 
         self.lastActionTime = time.time() 
+        self.log('[Ben:] removing loading screen...')
         setProperty("PTVL.INIT_CHANNELSET","true")
         self.runActions(RULES_ACTION_OVERLAY_SET_CHANNEL_END, channel, self.channels[channel - 1])
         
@@ -1224,31 +1258,120 @@ class TVOverlay(xbmcgui.WindowXMLDialog):
 
         self.isChannelSet = True
         self.Player.onPlaybackAction()
+
+        
+
+        self.log('[Ben:] setChannel, chtype = {}'.format(chtype))
+        self.log('[Ben:] setChannel, mediapath = {}'.format(mediapath))
+        #self.log('[Ben:] setChannel, current file = {}'.format(''))
+
+
+        
+        
+
+        #ben addition:
+        """
+        if mediapath[-4:].lower() == 'strm' or chtype != 0:
+            
+            if self.Player.getTime() + self.seektime_offset < self.seektime:
+                print('Ben: setChannel, changing seektime...')
+                self.Player.seekTime(seektime1)
+
+                if self.Player.getTime() + (self.seektime_offset*2) < self.seektime:
+                    print('Ben: setChannel, changing seektime to seektime2...')
+                    self.Player.seekTime(seektime2)
+        """
+        
+        while False: #Not in use
+            self.log('[Ben:] setChannel, SECOND LOOP')
+            self.log('[Ben:] setChannel, current seektime: {}'.format(self.Player.getTime()))
+            self.log('[Ben:] setChannel, required seektime: {}'.format(self.seektime))
+            self.log('[Ben:] setChannel, changing seektime...')
+            if mediapath[-4:].lower() == 'strm' or chtype == 15:
+                overtime = float((int(self.channels[self.currentChannel - 1].getItemDuration(self.channels[self.currentChannel - 1].playlistPosition))/10)*int(REAL_SETTINGS.getSetting("StreamOverTime")))
+                self.seektime = self.SmartSeek(mediapath, seektime1, seektime2, overtime)
+            else:
+                try:
+                    self.Player.seekTime(seektime1)
+                    self.seektime = seektime1
+                    self.log("setChannel, using seektime1")
+                except:
+                    self.log("setChannel, Unable to set proper seek time, trying different value")
+                    try:
+                        self.Player.seekTime(seektime2)
+                        self.seektime = seektime2
+                        self.log("setChannel, using seektime2")
+                    except:
+                        self.log('setChannel, Exception during seek', xbmc.LOGERROR)
+            self.log("setChannel,self.seektime = " + str(self.seektime))  
+
+
+        #End of Ben's
+
+
+
         self.log('setChannel, setChannel return')
+        print('Ben: removed loading screen...')
         
         
     def SmartSeek(self, mediapath, seektime1, seektime2, overtime):
         self.log("SmartSeek")
         seektime = 0
-        if seektime1 < overtime:
-            try:
-                self.Player.seekTime(seektime1)
-                seektime = seektime1
-                self.log("seektime1 = " + str(seektime))
-            except:
-                self.log("Unable to set proper seek time, trying different value")
-                if seektime2 < overtime:
-                    try:
-                        self.Player.seekTime(seektime2)
-                        seektime = seektime2
-                        self.log("seektime2 = " + str(seektime))
-                    except:
-                        self.log('Exception during seek', xbmc.LOGERROR)
-                        seektime = 0
+        seektime_offset = 2
+        while ((self.Player.getTime() < seektime1) or (self.Player.getTime() < seektime2)):
+            
+            self.log('[Ben:] setChannel, SmartSeek LOOP')
+            self.log('[Ben:] setChannel, overtime = {}'.format(overtime))
+            self.log('[Ben:] setChannel, required seektime1 = {}'.format(seektime1))
+            self.log('[Ben:] setChannel, required seektime2 = {}'.format(seektime2))
+            self.log('[Ben:] setChannel, current seektime: {}'.format(self.Player.getTime()))
+
+            if seektime1 < overtime:
+                try:
+                    self.Player.seekTime(seektime1)
+                    seektime = seektime1
+                    self.log("seektime1 = " + str(seektime))
+                except:
+                    self.log("Unable to set proper seek time, trying different value")
+                    if seektime2 < overtime:
+                        try:
+                            self.Player.seekTime(seektime2)
+                            seektime = seektime2
+                            self.log("seektime2 = " + str(seektime))
+                        except:
+                            self.log('Exception during seek', xbmc.LOGERROR)
+                            seektime = 0
+
+            
+
+
+
+            
+
+            if seektime1 < overtime or seektime2 < overtime:
+                xbmc.sleep(100)
+            else:
+                if seektime1 < seektime2:
+                    seek_over_gap = seektime1 - overtime
+                else:
+                    seek_over_gap = seektime1 - overtime
+                
+                xbmc.sleep(int(seek_over_gap))
+
+                seektime1 -= seek_over_gap
+                seektime2 -= seek_over_gap
+
+            seektime1 -= seektime_offset
+            seektime2 -= seektime_offset
+
+            
+                
+
+
         if seektime == 0 and DEBUG == 'true':
             self.log('overtime ' + str(overtime))
             DebugNotify("Overriding Seektime")
-        return seektime    
+        return seektime, seektime1, seektime2    
 
         
     def UPNPcontrol(self, func, label='', file='', seektime=0):
